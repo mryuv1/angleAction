@@ -105,7 +105,7 @@ class Trimmed_step:
         self.x_left = kwargs.setdefault('x_left', -500)
         self.y_down = kwargs.setdefault('y_down', -500)
         self.x_trim = kwargs.setdefault('x_trim', -300)
-        self.y_trim = kwargs.setdefault('y_trim', -300)
+        self.y_trim = kwargs.setdefault('y_trim', -400)
         self.epsilon = kwargs.setdefault('epsilon', 5)
         self.flag = 1
 
@@ -184,7 +184,7 @@ def main():
 
     # opens up a window
     screen = pygame.display.set_mode(res)
-
+    
     width, height = screen.get_width(), screen.get_height()
 
     # Screen Update Speed (FPS)
