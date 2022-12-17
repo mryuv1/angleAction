@@ -1,9 +1,12 @@
 import pygame
-import pandas as pd
 import numpy as np
-import re
+
+# to reduce calculations:
+global sqrt2
+sqrt2 = np.sqrt(2)
 
 colors = {'BLACK': (0, 0, 0),
+          'BLACK_lighter': (20, 20, 20),
           'GRAY': (127, 127, 127),
           'WHITE': (255, 255, 255),
           'YELLOW': (255, 255, 0),
@@ -16,11 +19,13 @@ colors = {'BLACK': (0, 0, 0),
 h_initial_conditions = {
     'current_q1': 300,
     'current_q2': 400,
+    'w1': 1,
+    'w2': 1,
     'res': (1000, 1000)
 }
 
 
-class twoD_Harmonic_separable_Heniltonian:
+class twoD_Harmonic_separable_hamiltonian:
     def __init__(self, **kwargs):
         self.m1 = kwargs.setdefault('m1', 1)
         self.m2 = kwargs.setdefault('m2', 1)
@@ -39,6 +44,18 @@ class twoD_Harmonic_separable_Heniltonian:
         self.center = kwargs.setdefault('center', (0, 0))
         self.dt = kwargs.setdefault('dt', 0.01)
         # print((self.current_q1, self.current_p1, self.current_q2, self.current_p2))
+        self.energy_1, self.energy_2, self.q1_max, self.q2_max = self.calc_max_q1_q2()
+
+    def calc_max_q1_q2(self):
+        # E_i = p^2/2m + 1/2*w^2*q^2
+        energy_1 = (self.current_p1 ** 2) / (2 * self.m1) + 0.5 * (self.w1 ** 2) * (self.current_q1 ** 2)
+        energy_2 = (self.current_p2 ** 2) / (2 * self.m2) + 0.5 * (self.w2 ** 2) * (self.current_q2 ** 2)
+        # print("the total energy is" + str(energy_1+energy_2))
+
+        q1_max = (sqrt2 * np.sqrt(energy_1)) / self.w1
+        q2_max = (sqrt2 * np.sqrt(energy_2)) / self.w2
+        # print(f'q1 max = {q1_max}, and q2_max = {q2_max}')
+        return energy_1, energy_2, q1_max, q2_max
 
     def step(self):
         self.previous_q1 = self.current_q1
@@ -52,8 +69,9 @@ class twoD_Harmonic_separable_Heniltonian:
         self.current_p2 = self.previous_p2 - self.dt * (self.w2 ** 2) * self.current_q2
 
         # print((self.current_q1, self.current_p1, self.current_q2, self.current_p2))
-
+        # TODO: maybe I have a problem with the iterations here
         self.center = (self.current_q1 + self.res[0] // 2, -self.current_q2 + self.res[1] // 2)
+        self.energy_1, self.energy_2, self.q1_max, self.q2_max = self.calc_max_q1_q2()
 
 
 class Step:
@@ -62,12 +80,12 @@ class Step:
         The cordinats are NOT in the pyGame board
         :param kwargs:
         """
-        self.x_right = kwargs.setdefault('x_right', -200)
-        self.y_up = kwargs.setdefault('y_up', -200)
+        self.x_right = kwargs.setdefault('x_right', -50)
+        self.y_up = kwargs.setdefault('y_up', -50)
         self.x_left = kwargs.setdefault('x_left', -500)
         self.y_down = kwargs.setdefault('y_down', -500)
         self.flag = 1
-        self.epsilon = kwargs.setdefault('epsilon', 5)
+        self.epsilon = kwargs.setdefault('epsilon', 15)
 
     def convert_to_rect_params(self, width, height):
         left = self.x_left + width // 2
@@ -77,19 +95,36 @@ class Step:
 
         return left, top, width, height
 
+    def inside(self, q1, q2):
+        return (q1 <= self.x_right) and (q2 <= self.y_up)
+
     def return_rule(self, q1, q2, p1, p2):
-        if (q1 < self.x_right) and (q1 > (self.x_right - self.epsilon)):
-            if q2 < self.y_up:
+
+        # if (q1 > self.x_right) and (q2 > self.y_up):
+        #     print(f'out - ({q1}, {q2}))')
+        #     self.flag = 1
+
+        if self.inside(q1=q1, q2=q2):
+            print(f'inside - ({q1}, {q2}))')
+            if (q1 >= (self.x_right - self.epsilon)) and self.flag:
                 self.flag = 0
                 return -p1, p2
-
-        if (q2 < self.y_up) and (q2 > (self.y_up - self.epsilon)):
-            if q1 < self.x_right:
+            if (q2 > (self.y_up - self.epsilon)) and self.flag:
                 self.flag = 0
                 return p1, -p2
-
-        if (q1 > self.x_right) and (q2 > self.y_up):
+        else:
             self.flag = 1
+        # elif (q1 <= self.x_right) and (q1 >= (self.x_right - self.epsilon)):
+        #     print("over the left")
+        #     if q2 < self.y_up and self.flag:
+        #         self.flag = 0
+        #         return -p1, p2
+        #
+        # elif (q2 <= self.y_up) and (q2 > (self.y_up - self.epsilon)):
+        #     print("over the upper")
+        #     if q1 < self.x_right and self.flag:
+        #         self.flag = 0
+        #         return p1, -p2
 
         return p1, p2
 
@@ -133,8 +168,8 @@ class Trimmed_step:
         :return: p1_return, p2_return
         """
         theta = np.arctan(self.slope)
-        p1_return = p1*np.cos(2*theta) + p2*np.sin(2*theta)
-        p2_return = p1*np.sin(2 * theta) - p2*np.cos(2 * theta)
+        p1_return = p1 * np.cos(2 * theta) + p2 * np.sin(2 * theta)
+        p2_return = p1 * np.sin(2 * theta) - p2 * np.cos(2 * theta)
         return p1_return, p2_return
 
     def return_rule(self, q1, q2, p1, p2):
@@ -153,7 +188,7 @@ class Trimmed_step:
             line_val = (q1 - self.x_trim) * self.slope
             if ((q2 - self.y_up) < line_val) and self.flag:
                 self.flag = 0
-                print("now flag is" + str(self.flag))
+                # print("now flag is" + str(self.flag))
                 p1_return, p2_return = self.calculated_returned_momentum(p1, p2)
                 return p1_return, p2_return
 
@@ -163,16 +198,17 @@ class Trimmed_step:
         return p1, p2
 
 
-def dynamics(screen, hamiltonian, obstacle=None):
-    hamiltonian.step()
+def dynamics(hamiltonian, screen=None, obstacle=None):
     if obstacle:
         hamiltonian.current_p1, hamiltonian.current_p2 = obstacle.return_rule(hamiltonian.current_q1,
                                                                               hamiltonian.current_q2,
                                                                               hamiltonian.current_p1,
                                                                               hamiltonian.current_p2)
-    pygame.draw.circle(screen, colors['WHITE'],
-                       center=hamiltonian.center,
-                       radius=hamiltonian.radius)
+    hamiltonian.step()
+    if screen:
+        pygame.draw.circle(screen, colors['WHITE'],
+                           center=hamiltonian.center,
+                           radius=hamiltonian.radius)
 
 
 def main():
@@ -184,13 +220,13 @@ def main():
 
     # opens up a window
     screen = pygame.display.set_mode(res)
-    
+
     width, height = screen.get_width(), screen.get_height()
 
     # Screen Update Speed (FPS)
     clock = pygame.time.Clock()
 
-    h = twoD_Harmonic_separable_Heniltonian(**h_initial_conditions)
+    h = twoD_Harmonic_separable_hamiltonian(**h_initial_conditions)
     step1 = Step()
     trimmed_step = Trimmed_step()
 
@@ -199,8 +235,8 @@ def main():
         screen.fill(colors['BLACK'])
 
         # show axis
-        pygame.draw.line(screen, colors['YELLOW'], (0, height//2), (width, height//2))  # X-axis
-        pygame.draw.line(screen,colors['YELLOW'], (width//2, 0), (width//2, height)) # Y-axis
+        pygame.draw.line(screen, colors['YELLOW'], (0, height // 2), (width, height // 2))  # X-axis
+        pygame.draw.line(screen, colors['YELLOW'], (width // 2, 0), (width // 2, height))  # Y-axis
         pygame.draw.line(screen, colors['YELLOW'], (0, 0), (width, height))  # X=-Y-axis
         pygame.draw.line(screen, colors['YELLOW'], (width, 0), (0, height))  # X=Y-axis
         # NO OBSTACLE:
@@ -212,7 +248,7 @@ def main():
 
         # RECT-TRIMMED OBSTACLE:
         pygame.draw.polygon(screen, colors['CYAN'], trimmed_step.convert_to_polygon_params(width, height))
-        dynamics(screen=screen, hamiltonian=h, obstacle=trimmed_step)
+        dynamics(hamiltonian=h, screen=screen, obstacle=trimmed_step)
 
         pygame.display.update()
 
