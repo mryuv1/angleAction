@@ -20,8 +20,8 @@ h_initial_conditions = {
     'current_q1': 300,
     'current_q2': 400,
     'w1': 1,
-    'w2': 1,
-    'res': (1000, 1000)
+    'w2': 3,
+    'res': (800, 800)
 }
 
 
