@@ -1,6 +1,6 @@
 import pygame
 import numpy as np
-from straight_space_animation import colors, h_initial_conditions, twoD_Harmonic_separable_hamiltonian, dynamics, Step
+from straight_space_animation import colors, twoD_Harmonic_separable_hamiltonian, dynamics, Step
 
 
 class AngleSpace:

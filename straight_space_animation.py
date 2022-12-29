@@ -17,10 +17,10 @@ colors = {'BLACK': (0, 0, 0),
           }
 
 h_initial_conditions = {
-    'current_q1': 300,
-    'current_q2': 400,
+    'current_q1': 400,
+    'current_q2': -94,
     'w1': 1,
-    'w2': 3,
+    'w2': 2,
     'res': (800, 800)
 }
 
@@ -74,6 +74,12 @@ class twoD_Harmonic_separable_hamiltonian:
         self.energy_1, self.energy_2, self.q1_max, self.q2_max = self.calc_max_q1_q2()
 
 
+def rotate(x, y, theta):
+    new_x = x * np.cos(theta) - y * np.sin(theta)
+    new_y = x * np.sin(theta) + y * np.cos(theta)
+    return new_x, new_y
+
+
 class Step:
     def __init__(self, **kwargs):
         """
@@ -82,10 +88,10 @@ class Step:
         """
         self.x_right = kwargs.setdefault('x_right', -50)
         self.y_up = kwargs.setdefault('y_up', -50)
-        self.x_left = kwargs.setdefault('x_left', -500)
-        self.y_down = kwargs.setdefault('y_down', -500)
-        self.flag = 1
-        self.epsilon = kwargs.setdefault('epsilon', 15)
+        self.x_left = kwargs.setdefault('x_left', -400)
+        self.y_down = kwargs.setdefault('y_down', -400)
+        self.hit_flag = 0
+        self.epsilon = kwargs.setdefault('epsilon', 0.1)
 
     def convert_to_rect_params(self, width, height):
         left = self.x_left + width // 2
@@ -105,15 +111,26 @@ class Step:
         #     self.flag = 1
 
         if self.inside(q1=q1, q2=q2):
-            print(f'inside - ({q1}, {q2}))')
-            if (q1 >= (self.x_right - self.epsilon)) and self.flag:
-                self.flag = 0
-                return -p1, p2
-            if (q2 > (self.y_up - self.epsilon)) and self.flag:
-                self.flag = 0
-                return p1, -p2
+            # print(f'inside - ({q1}, {q2}))')
+            if not self.hit_flag:
+                self.hit_flag = 1
+                q1_tilde = q1 - p1*self.epsilon
+                q2_tilde = q2 + p2*self.epsilon
+                condition = self.inside(q1=q1_tilde, q2=q2_tilde)
+                # if np.abs(q1 - self.x_right) < np.abs(q2 - self.y_up):
+                if not condition and np.abs(q1 - self.x_right) < np.abs(q2 - self.y_up):
+                    dx = self.x_right - q1
+                    q1 = self.x_right
+                    q2 = q2 + dx * (p2 / p1)
+                    return q1, q2, -p1, p2
+                else:
+                    dy = self.y_up - q2
+                    q2 = self.y_up
+                    q1 = q1 + dy * (p1 / p2)
+                    return q1, q2, p1, -p2
+
         else:
-            self.flag = 1
+            self.hit_flag = 0
         # elif (q1 <= self.x_right) and (q1 >= (self.x_right - self.epsilon)):
         #     print("over the left")
         #     if q2 < self.y_up and self.flag:
@@ -126,7 +143,7 @@ class Step:
         #         self.flag = 0
         #         return p1, -p2
 
-        return p1, p2
+        return q1, q2, p1, p2
 
 
 class Trimmed_step:
@@ -135,14 +152,15 @@ class Trimmed_step:
         The cordinats are NOT in the pyGame board
         :param kwargs:
         """
-        self.x_right = kwargs.setdefault('x_right', -200)
-        self.y_up = kwargs.setdefault('y_up', -200)
+        self.x_right = kwargs.setdefault('x_right', -100)
+        self.y_up = kwargs.setdefault('y_up', -100)
         self.x_left = kwargs.setdefault('x_left', -500)
         self.y_down = kwargs.setdefault('y_down', -500)
-        self.x_trim = kwargs.setdefault('x_trim', -300)
-        self.y_trim = kwargs.setdefault('y_trim', -400)
+        self.x_trim = kwargs.setdefault('x_trim', -200)
+        self.y_trim = kwargs.setdefault('y_trim', -150)
         self.epsilon = kwargs.setdefault('epsilon', 5)
-        self.flag = 1
+        self.hit_flag = 1
+        self.dt = kwargs.setdefault('dt', 0.01)
 
         if self.x_right != self.x_trim:
             self.slope = (self.y_trim - self.y_up) / (self.x_right - self.x_trim)
@@ -172,38 +190,79 @@ class Trimmed_step:
         p2_return = p1 * np.sin(2 * theta) - p2 * np.cos(2 * theta)
         return p1_return, p2_return
 
+    def inside(self, q1, q2):
+        if q1 <= self.x_right and q2 <= self.y_up:
+            if q1 <= self.x_trim:
+                return 1
+            elif q2 <= self.y_trim:
+                return 2
+            elif (q2 - self.y_up) < ((q1 - self.x_trim) * self.slope):
+                return 3
+            else:
+                return 0
+        return 0
+
     def return_rule(self, q1, q2, p1, p2):
 
-        if (q1 < self.x_right) and (q1 > (self.x_right - self.epsilon)):
-            if q2 < self.y_trim and self.flag:
-                self.flag = 0
-                return -p1, p2
+        switch = self.inside(q1, q2)
+        if switch:
+            if not self.hit_flag:
+                self.hit_flag = 1
+                if switch == 1:
+                    dy = self.y_up - q2
+                    q2 = self.y_up
+                    q1 = q1 + dy * (p1 / p2)
+                    return q1, q2, p1, -p2
+                if switch == 2:
+                    dx = self.x_right - q1
+                    q1 = self.x_right
+                    q2 = q2 + dx * (p2 / p1)
+                    return q1, q2, -p1, p2
+                if switch == 3:
+                    rotated_p2, rotated_p1 = rotate(p1, p2, np.arctan(self.slope))
+                    b1 = self.y_up - self.slope * self.x_trim
+                    b2 = q2 + q1 / self.slope
+                    perpen_q1 = (self.slope / (1 + self.slope ** 2)) * (b2 - b1)
+                    perpen_q2 = perpen_q1 * self.slope + b1
+                    dist = np.sqrt((q1 - perpen_q1) ** 2 + (q2 - perpen_q2) ** 2)
+                    rotated_fix = dist * (rotated_p2 / rotated_p1)
+                    rect_dx, rect_dy = rotate(0, rotated_fix, -np.arctan(self.slope))
+                    p2_return, p1_return = self.calculated_returned_momentum(p1, p2)
+                    return (perpen_q1 + rect_dy), (perpen_q2 + rect_dx), p1_return, p2_return
+        else:
+            self.hit_flag = 0
+        # if (q1 < self.x_right) and (q1 > (self.x_right - self.epsilon)):
+        #     if q2 < self.y_trim and not self.hit_flag:
+        #         self.hit_flag = 0
+        #         return (q1 - self.dt*p1), (q2 - self.dt*p2), -p1, p2
+        #
+        # if (q2 < self.y_up) and (q2 > (self.y_up - self.epsilon)):
+        #     if q1 < self.x_trim and not self.hit_flag:
+        #         self.hit_flag = 0
+        #         return (q1 - self.dt*p1), (q2 - self.dt*p2), p1, -p2
+        #
+        # if (q1 < self.x_right) and (q2 < self.y_up):
+        #     line_val = (q1 - self.x_trim) * self.slope
+        #     if ((q2 - self.y_up) < line_val) and not self.hit_flag:
+        #         self.hit_flag = 0
+        #         # print("now flag is" + str(self.flag))
+        #         p1_return, p2_return = self.calculated_returned_momentum(p1, p2)
+        #         return (q1 - self.dt*p1), (q2 - self.dt*p2), p1_return, p2_return
 
-        if (q2 < self.y_up) and (q2 > (self.y_up - self.epsilon)):
-            if q1 < self.x_trim and self.flag:
-                self.flag = 0
-                return p1, -p2
+        # if (q1 > self.x_right) and (q2 > self.y_up):
+        #     self.hit_flag = 0
 
-        if (q1 < self.x_right) and (q2 < self.y_up):
-            line_val = (q1 - self.x_trim) * self.slope
-            if ((q2 - self.y_up) < line_val) and self.flag:
-                self.flag = 0
-                # print("now flag is" + str(self.flag))
-                p1_return, p2_return = self.calculated_returned_momentum(p1, p2)
-                return p1_return, p2_return
-
-        if (q1 > self.x_right) and (q2 > self.y_up):
-            self.flag = 1
-
-        return p1, p2
+        return q1, q2, p1, p2
 
 
 def dynamics(hamiltonian, screen=None, obstacle=None):
     if obstacle:
-        hamiltonian.current_p1, hamiltonian.current_p2 = obstacle.return_rule(hamiltonian.current_q1,
-                                                                              hamiltonian.current_q2,
-                                                                              hamiltonian.current_p1,
-                                                                              hamiltonian.current_p2)
+        hamiltonian.current_q1, hamiltonian.current_q2, hamiltonian.current_p1, hamiltonian.current_p2 = obstacle.return_rule(
+            hamiltonian.current_q1,
+            hamiltonian.current_q2,
+            hamiltonian.current_p1,
+            hamiltonian.current_p2)
+
     hamiltonian.step()
     if screen:
         pygame.draw.circle(screen, colors['WHITE'],
