@@ -17,8 +17,8 @@ colors = {'BLACK': (0, 0, 0),
           }
 
 h_initial_conditions = {
-    'current_q1': 400,
-    'current_q2': -94,
+    'current_q1': 375,
+    'current_q2': -375,
     'w1': 1,
     'w2': 2,
     'res': (800, 800)
@@ -114,8 +114,8 @@ class Step:
             # print(f'inside - ({q1}, {q2}))')
             if not self.hit_flag:
                 self.hit_flag = 1
-                q1_tilde = q1 - p1*self.epsilon
-                q2_tilde = q2 + p2*self.epsilon
+                q1_tilde = q1 - p1 * self.epsilon
+                q2_tilde = q2 + p2 * self.epsilon
                 condition = self.inside(q1=q1_tilde, q2=q2_tilde)
                 # if np.abs(q1 - self.x_right) < np.abs(q2 - self.y_up):
                 if not condition and np.abs(q1 - self.x_right) < np.abs(q2 - self.y_up):
@@ -146,6 +146,98 @@ class Step:
         return q1, q2, p1, p2
 
 
+class circled_edge(Step):
+    def __init__(self, **kwargs):
+        """
+        The cordinats are NOT in the pyGame board
+        :param kwargs:
+        """
+        Step.__init__(self, **kwargs)
+        self.top_right_radius = kwargs.setdefault('top_right_radius', 30)
+        self.x_center = self.x_right - self.top_right_radius
+        self.y_center = self.y_up - self.top_right_radius
+
+    def inside(self, q1, q2):
+        if (q1 <= self.x_right) and (q2 <= self.y_up):
+            if q1 < self.x_center:
+                return 1
+            elif q2 < self.y_center:
+                return 2
+            else:
+                dist = np.sqrt((q1 - self.x_center) ** 2 + (q2 - self.y_center) ** 2)
+                if dist < self.top_right_radius:
+                    return 3
+
+                return 0
+        return 0
+
+    def calculated_returned_momentum(self, p1, p2, slope):
+        """
+        calculate the return values of the momentum, by the formula of:
+        |p1_return| = |cos(2*theta)      sin(2*theta)    | |p1|
+        |p2_return| = |sin(2 * theta)    -cos(2 * theta) | |p2|
+        :param p1:
+        :param p2:
+        :return: p1_return, p2_return
+        """
+        theta = np.arctan(slope)
+        p1_return = p1 * np.cos(2 * theta) + p2 * np.sin(2 * theta)
+        p2_return = p1 * np.sin(2 * theta) - p2 * np.cos(2 * theta)
+        return p1_return, p2_return
+
+    def reconstruct_x_y(self, q1, q2, p1, p2):
+
+        m = p2 / p1
+        b = q2 - m * q1
+        h = self.x_center
+        k = self.y_center
+        r = self.top_right_radius
+        A = 1 + m ** 2
+        B = 2 * m * (b - k) - 2 * h
+        C = (b - k) ** 2 + h ** 2 - r ** 2
+        rec_x_plus = (-B + np.sqrt(B ** 2 - 4 * A * C)) / (2 * A)
+        rec_x_minus = (-B - np.sqrt(B ** 2 - 4 * A * C)) / (2 * A)
+        rec_x = rec_x_plus if (np.abs(rec_x_plus - q1) < np.abs(rec_x_minus - q1)) else rec_x_minus
+        rec_y = m * rec_x + b
+
+        return rec_x, rec_y
+
+    def return_rule(self, q1, q2, p1, p2):
+        switch = self.inside(q1, q2)
+        if switch:
+            if not self.hit_flag:
+                self.hit_flag = 1
+                if switch == 1:
+                    dy = self.y_up - q2
+                    q2 = self.y_up
+                    q1 = q1 + dy * (p1 / p2)
+                    return q1, q2, p1, -p2
+                if switch == 2:
+                    dx = self.x_right - q1
+                    q1 = self.x_right
+                    q2 = q2 + dx * (p2 / p1)
+                    return q1, q2, -p1, p2
+                if switch == 3:
+                    rec_x, rec_y = self.reconstruct_x_y(q1, q2, p1, p2)
+                    current_slope = (self.x_center - rec_x) / (rec_y - self.y_center)
+                    # rotated_p2, rotated_p1 = rotate(p1, p2, np.arctan(current_slope))
+                    # b1 = q2 - current_slope * q1
+                    # b2 = q2 + q1 / current_slope
+                    # perpen_q1 = (current_slope / (1 + current_slope ** 2)) * (b2 - b1)
+                    # perpen_q2 = perpen_q1 * current_slope + b1
+                    # dist = np.sqrt((q1 - perpen_q1) ** 2 + (q2 - perpen_q2) ** 2)
+                    # rotated_fix = dist * (rotated_p1 / rotated_p2)
+                    # if np.abs(rotated_fix) > 5:
+                    #     rotated_fix = dist * (rotated_p2 / rotated_p1)
+                    # rect_dx, rect_dy = rotate(0, rotated_fix, -np.arctan(current_slope))
+                    p1_return, p2_return = self.calculated_returned_momentum(p1, p2, slope=current_slope)
+                    return (rec_x), (rec_y), p1_return, p2_return
+        else:
+            self.hit_flag = 0
+
+        return q1, q2, p1, p2
+
+
 class Trimmed_step:
     def __init__(self, **kwargs):
         """
@@ -157,7 +249,7 @@ class Trimmed_step:
         self.x_left = kwargs.setdefault('x_left', -500)
         self.y_down = kwargs.setdefault('y_down', -500)
         self.x_trim = kwargs.setdefault('x_trim', -200)
-        self.y_trim = kwargs.setdefault('y_trim', -150)
+        self.y_trim = kwargs.setdefault('y_trim', -200)
         self.epsilon = kwargs.setdefault('epsilon', 5)
         self.hit_flag = 1
         self.dt = kwargs.setdefault('dt', 0.01)
@@ -197,8 +289,12 @@ class Trimmed_step:
             elif q2 <= self.y_trim:
                 return 2
             elif (q2 - self.y_up) < ((q1 - self.x_trim) * self.slope):
+                # elif q2 < (self.slope*(q1-self.x_trim) + self.y_up):
+                # print("this is inside the return 3")
                 return 3
             else:
+                # print(f'this is the slope y: {((q1 - self.x_trim) * self.slope) + self.y_up}')
+                # print(f'the cordiantes are: ({q1}, {q2})')
                 return 0
         return 0
 
@@ -225,9 +321,11 @@ class Trimmed_step:
                     perpen_q1 = (self.slope / (1 + self.slope ** 2)) * (b2 - b1)
                     perpen_q2 = perpen_q1 * self.slope + b1
                     dist = np.sqrt((q1 - perpen_q1) ** 2 + (q2 - perpen_q2) ** 2)
-                    rotated_fix = dist * (rotated_p2 / rotated_p1)
+                    rotated_fix = dist * (rotated_p1 / rotated_p2)
+                    if np.abs(rotated_fix) > 5:
+                        rotated_fix = dist * (rotated_p2 / rotated_p1)
                     rect_dx, rect_dy = rotate(0, rotated_fix, -np.arctan(self.slope))
-                    p2_return, p1_return = self.calculated_returned_momentum(p1, p2)
+                    p1_return, p2_return = self.calculated_returned_momentum(p1, p2)
                     return (perpen_q1 + rect_dy), (perpen_q2 + rect_dx), p1_return, p2_return
         else:
             self.hit_flag = 0
@@ -288,6 +386,7 @@ def main():
     h = twoD_Harmonic_separable_hamiltonian(**h_initial_conditions)
     step1 = Step()
     trimmed_step = Trimmed_step()
+    circled = circled_edge(top_right_radius=40)
 
     while True:
         # fills the screen with a color
@@ -306,8 +405,13 @@ def main():
         # dynamics(screen=screen, hamiltonian=h, obstacle=step1)
 
         # RECT-TRIMMED OBSTACLE:
-        pygame.draw.polygon(screen, colors['CYAN'], trimmed_step.convert_to_polygon_params(width, height))
-        dynamics(hamiltonian=h, screen=screen, obstacle=trimmed_step)
+        # pygame.draw.polygon(screen, colors['CYAN'], trimmed_step.convert_to_polygon_params(width, height))
+        # dynamics(hamiltonian=h, screen=screen, obstacle=trimmed_step)
+
+        # CIRC OBSTACLE:
+        pygame.draw.rect(screen, colors['RED'], circled.convert_to_rect_params(width, height),
+                         border_top_right_radius=circled.top_right_radius)
+        dynamics(screen=screen, hamiltonian=h, obstacle=circled)
 
         pygame.display.update()
 
